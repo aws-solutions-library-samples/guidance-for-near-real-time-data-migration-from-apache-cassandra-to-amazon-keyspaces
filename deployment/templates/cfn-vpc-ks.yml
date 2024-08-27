@@ -1,0 +1,520 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: Can contain only ASCII characters.
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: 192.168.0.0/16
+    PublicOne:
+      CIDR: 192.168.1.0/24
+    PublicTwo:
+      CIDR: 192.168.2.0/24
+    PrivateOne:
+      CIDR: 192.168.3.0/24
+    PrivateTwo:
+      CIDR: 192.168.4.0/24
+    PrivateThree:
+      CIDR: 192.168.5.0/24
+  RegionAMI:
+    us-east-1:
+      HVM64: ami-0e001c9271cf7f3b9
+    us-east-2:
+      HVM64: ami-0f30a9c3a48f3fa79
+    us-west-1:
+      HVM64: ami-036cafe742923b3d9
+    us-west-2:
+      HVM64: ami-03c983f9003cb9cd1
+    eu-west-1:
+      HVM64: ami-0607a9783dd204cae
+    eu-west-2:
+      HVM64: ami-09627c82937ccdd6d
+    eu-west-3:
+      HVM64: ami-0326f9264af7e51e2
+    eu-north-1:
+      HVM64: ami-011e54f70c1c91e17
+    eu-central-1:
+      HVM64: ami-026c3177c9bd54288
+    ap-south-1:
+      HVM64: ami-05e00961530ae1b55
+    ap-southeast-2:
+      HVM64: ami-076fe60835f136dc9
+    ap-southeast-1:
+      HVM64: ami-0be48b687295f8bd6
+    ap-northeast-1:
+      HVM64: ami-0595d6e81396a9efb
+
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - VPC
+        - CIDR
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-Vpc
+
+  # KMS Key for encrypting the Log Groups
+  LogGroupKMSKey:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      Description: Key for encrypting the Log Groups and MSK Data at Rest
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Allow the root user full access to manage the key
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: 'kms:*'
+            Resource: '*'
+
+          # Allow CloudWatch Logs to use the key for specific log groups
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+
+          # Allow VPC Flow Logs to use the key
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+
+  # IAM Role for VPC Flow Logs
+  FlowLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'vpc-flow-logs.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: VPCFlowLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/flowlogs/${AWS::StackName}:*"
+              - Effect: Allow
+                Action:
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeLogStreams'
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/flowlogs/${AWS::StackName}:*"
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "The VPC Flow Log role requires broad permissions to manage log streams and put log events across multiple log groups dynamically. This is critical to ensure logging continuity and operational transparency."
+
+
+  # CloudWatch Log Group for VPC Flow Logs with KMS Encryption
+  VPCFlowLogLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: LogGroupKMSKey
+    Properties:
+      LogGroupName: !Sub '/aws/vpc/flowlogs/${AWS::StackName}'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt LogGroupKMSKey.Arn
+
+  # VPC Flow Log
+  VPCFlowLog:
+    Type: 'AWS::EC2::FlowLog'
+    DependsOn:
+      - VPCFlowLogLogGroup
+      - FlowLogRole
+    Properties:
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+      LogGroupName: !Ref VPCFlowLogLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+
+
+
+  PublicSubnetOne:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PublicOne
+        - CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-PublicSubnetOne
+  PublicSubnetTwo:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PublicTwo
+        - CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-PublicSubnetTwo
+  PrivateSubnetOne:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PrivateOne
+        - CIDR
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-PrivateSubnetOne
+  PrivateSubnetTwo:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PrivateTwo
+        - CIDR
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-PrivateSubnetTwo
+  PrivateSubnetThree:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select
+        - 2
+        - !GetAZs
+          Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: !FindInMap
+        - SubnetConfig
+        - PrivateThree
+        - CIDR
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-PrivateSubnetThree
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+  NatGatewayOneEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+      Domain: vpc
+  NatGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayOneEIP.AllocationId
+      SubnetId: !Ref PublicSubnetOne
+  NatGatewayTwoEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+      Domain: vpc
+  NatGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayTwoEIP.AllocationId
+      SubnetId: !Ref PublicSubnetTwo
+  GatewayAttachement:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetOneRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnetOne
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetTwoRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnetTwo
+      RouteTableId: !Ref PublicRouteTable
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayOne
+  PrivateSubnetOneRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetOne
+  PrivateSubnetTwoRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetTwo
+  PrivateSubnetThreeRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetThree
+  CassandraClientInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+          Description: Allow SSH access from the specified IP range
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+
+  CassandraClientEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.medium
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+      SubnetId: !Ref PublicSubnetOne
+      SecurityGroupIds:
+        - !GetAtt
+          - CassandraClientInstanceSecurityGroup
+          - GroupId
+      ImageId: !FindInMap
+        - RegionAMI
+        - !Ref 'AWS::Region'
+        - HVM64
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass-CassandraClientInstance
+      UserData: !Base64 >
+          #!/bin/bash
+          cd /home/ubuntu
+          sudo apt-get update
+          sudo apt-get install -y openjdk-8-jdk
+          sudo apt-get install -y python2
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 18
+          echo "deb http://debian.datastax.com/community 311x main" | sudo tee -a /etc/apt/sources.list.d/cassandra.sources.list
+          curl https://downloads.apache.org/cassandra/KEYS | sudo apt-key add -
+          sudo apt-get update
+          curl -OL https://archive.apache.org/dist/cassandra/3.11.2/apache-cassandra-3.11.2-bin.tar.gz
+          tar -zxvf apache-cassandra-3.11.2-bin.tar.gz
+          sudo chown -R ubuntu:ubuntu apache-cassandra-3.11.2
+
+
+      Monitoring: true
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 50
+            VolumeType: "gp2"
+            Encrypted: true
+
+
+  GlueMigrationRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM4
+            reason: "AWS managed policies are required for this Glue role to interact with Keyspaces and S3, and to assume the Glue service role."
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-glue-migration-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonKeyspacesFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM4
+            reason: "AWS managed policy AWSCloudFormationReadOnlyAccess is required for the EC2 role to allow CloudFormation read access for this setup."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+                - "delivery.logs.amazonaws.com"
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess'
+
+
+  # Instance Profile for EC2
+  EC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: EC2CQLREPLProfile
+      Roles:
+        - !Ref EC2Role
+
+#Amazon Keyspaces Keyspace and Table
+  Keyspace:
+    Type: AWS::Cassandra::Keyspace
+    Properties:
+      KeyspaceName: aws
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass
+  OrdersTable:
+    Type: AWS::Cassandra::Table
+    DependsOn: Keyspace
+    Properties:
+      KeyspaceName: aws
+      TableName: orders
+      PartitionKeyColumns:
+      - ColumnName: order_id
+        ColumnType: uuid
+      ClusteringKeyColumns:
+      - Column:
+          ColumnName: order_date
+          ColumnType: timestamp
+        OrderBy: ASC
+      RegularColumns:
+      - ColumnName: product_id
+        ColumnType: uuid
+      - ColumnName: quantity
+        ColumnType: int
+      - ColumnName: user_id
+        ColumnType: uuid
+      Tags:
+        - Key: Name
+          Value: cqlrepl-ks-cass
+
+
+Outputs:
+  CassandraVPCId:
+    Description: VPC ID of Cassandra Cluster
+    Value: !Ref VPC
+  PublicSubnetOne:
+    Description: The name of the public subnet created
+    Value: !Ref PublicSubnetOne
+  PublicSubnetTwo:
+    Description: The name of the public subnet created
+    Value: !Ref PublicSubnetTwo
+  PrivateSubnetOne:
+    Description: The ID of private subnet one created
+    Value: !Ref PrivateSubnetOne
+  PrivateSubnetOneAZ:
+    Description: The Availability Zone of Private Subnet One
+    Value: !GetAtt PrivateSubnetOne.AvailabilityZone
+  PrivateSubnetTwo:
+    Description: The ID of private subnet two created
+    Value: !Ref PrivateSubnetTwo
+  PrivateSubnetTwoAZ:
+    Description: The Availability Zone of Private Subnet Two
+    Value: !GetAtt PrivateSubnetTwo.AvailabilityZone
+  PrivateSubnetThree:
+    Description: The ID of private subnet three created
+    Value: !Ref PrivateSubnetThree
+  PrivateSubnetThreeAZ:
+    Description: The Availability Zone of Private Subnet Three
+    Value: !GetAtt PrivateSubnetThree.AvailabilityZone
+  Ec2Rolename:
+    Description: The name of the EC2 Role
+    Value: !Ref EC2Role
+  Ec2RoleID:
+    Description: The Arn for the Ec2 Role
+    Value: !GetAtt EC2Role.Arn
+  GlueRolename:
+    Description: The name of the Glue Role
+    Value: !Ref GlueMigrationRole
+  GlueRoleID:
+    Description: The Arn of the Glue Role
+    Value: !GetAtt GlueMigrationRole.Arn
+  Cassandraclientinstance:
+    Description: Name of cassandra client EC2 instance
+    Value: !Ref CassandraClientEC2Instance
+  CassandraClientInstanceSecurityGroupID:
+    Description: The ID of the security group created for the Cassandra Client EC2 instance
+    Value: !GetAtt CassandraClientInstanceSecurityGroup.GroupId
+
