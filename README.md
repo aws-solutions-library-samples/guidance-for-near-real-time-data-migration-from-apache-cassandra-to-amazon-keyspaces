@@ -1,27 +1,19 @@
-# Guidance Title (required)
-
-The Guidance title should be consistent with the title established first in Alchemy.
-
-**Example:** *Guidance for Product Substitutions on AWS*
-
-This title correlates exactly to the Guidance it’s linked to, including its corresponding sample code repository. 
+# Guidance for Near Real-Time Data Migration from Apache Cassandra to Amazon Keyspaces
 
 
-## Table of Contents (required)
+## Table of Content
 
-List the top-level sections of the README template, along with a hyperlink to the specific section.
-
-### Required
-
-1. [Overview](#overview-required)
+1. [Overview](#overview)
     - [Cost](#cost)
-2. [Prerequisites](#prerequisites-required)
-    - [Operating System](#operating-system-required)
-3. [Deployment Steps](#deployment-steps-required)
-4. [Deployment Validation](#deployment-validation-required)
-5. [Running the Guidance](#running-the-guidance-required)
-6. [Next Steps](#next-steps-required)
-7. [Cleanup](#cleanup-required)
+2. [Prerequisites](#prerequisites)
+    - [Operating System](#operating-system)
+    - [AWS account requirements](#AWS-account-requirements)
+    - [Supported Regions](#Supported-Regions)
+3. [Deployment Steps](#deployment-steps)
+4. [Deployment Validation](#deployment-validation)
+5. [Running the Guidance](#running-the-guidance)
+6. [Next Steps](#next-steps)
+7. [Cleanup](#cleanup)
 
 ***Optional***
 
@@ -30,186 +22,582 @@ List the top-level sections of the README template, along with a hyperlink to th
 10. [Notices](#notices-optional)
 11. [Authors](#authors-optional)
 
-## Overview (required)
+## Overview
 
-1. Provide a brief overview explaining the what, why, or how of your Guidance. You can answer any one of the following to help you write this:
+This Guidance demonstrates how to efficiently migrate data from self-managed Apache Cassandra clusters to Amazon Keyspaces using CQL Replicator in near real-time.CQLReplicator is an open source utility built by AWS Solutions Architects that helps customers migrate data from self-managed Apache Cassandra to Amazon Keyspaces in near real time.
 
-    - **Why did you build this Guidance?**
-    - **What problem does this Guidance solve?**
+The objective of this guidance is to support customers in seamlessly migrating data from self-managed Apache Cassandra clusters to Amazon Keyspaces using CQL replicator. CQLReplicator is an open source utility built by AWS Solutions Architects that helps customers migrate data from self-managed Apache Cassandra to Amazon Keyspaces in near real time.Included sample code features CloudFormation templates that significantly reduce the complexity of setting up key components such as VPC, Subnets, Security groups, IAM roles and Cassandra cluster, reducing manual configuration efforts. These templates, along with additional steps allows you to load data into Apache Cassandra cluster and migrate the data using CQLReplicator. 
 
-2. Include the architecture diagram image, as well as the steps explaining the high-level overview and flow of the architecture. 
-    - To add a screenshot, create an ‘assets/images’ folder in your repository and upload your screenshot to it. Then, using the relative file path, add it to your README. 
+Architecture diagram:
 
-### Cost ( required )
+![Architecture diagram](./assets/images/architecture.png)
 
-This section is for a high-level cost estimate. Think of a likely straightforward scenario with reasonable assumptions based on the problem the Guidance is trying to solve. Provide an in-depth cost breakdown table in this section below ( you should use AWS Pricing Calculator to generate cost breakdown ).
 
-Start this section with the following boilerplate text:
 
-_You are responsible for the cost of the AWS services used while running this Guidance. As of <month> <year>, the cost for running this Guidance with the default settings in the <Default AWS Region (Most likely will be US East (N. Virginia)) > is approximately $<n.nn> per month for processing ( <nnnnn> records )._
+### Cost
 
-Replace this amount with the approximate cost for running your Guidance in the default Region. This estimate should be per month and for processing/serving resonable number of requests/entities.
+You are responsible for the cost of the AWS services used while running this Guidance.
 
-Suggest you keep this boilerplate text:
-_We recommend creating a [Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) through [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) to help manage costs. Prices are subject to change. For full details, refer to the pricing webpage for each AWS service used in this Guidance._
+As of 07/02/2024, the cost for running this guidance with the default settings in the US East (N. Virginia) is approximately $690.64 per month for producing 1 million messages and inserting them in to Amazon Keyspaces and Apache Cassandra databases.
 
-### Sample Cost Table ( required )
-
-**Note : Once you have created a sample cost table using AWS Pricing Calculator, copy the cost breakdown to below table and upload a PDF of the cost estimation on BuilderSpace. Do not add the link to the pricing calculator in the ReadMe.**
 
 The following table provides a sample cost breakdown for deploying this Guidance with the default parameters in the US East (N. Virginia) Region for one month.
 
-| AWS service  | Dimensions | Cost [USD] |
+| AWS service  | Dimensions | Monthly Cost [USD] |
 | ----------- | ------------ | ------------ |
-| Amazon API Gateway | 1,000,000 REST API calls per month  | $ 3.50month |
-| Amazon Cognito | 1,000 active users per month without advanced security feature | $ 0.00 |
+| Amazon Managed Streaming for Apache Kafka (MSK) | Storage per Broker (100 GB), DT Intra-Region: (1 GB per month), Number of Kafka broker nodes (3), Compute Family (t3.small), Number of MCUs (2)  | $ 290.484 |
+| Amazon EC2 (kafka client instance) | Tenancy (Shared Instances), Operating system (Linux), Workload (Consistent, Number of instances: 1), Advance EC2 instance (t2.medium), Pricing strategy (EC2 Instance Savings Plans 3yr  No Upfront), EBS Storage amount (100 GB) | $ 22.6 |
+| Amazon EC2 (cassandra nodes) | Tenancy (Shared Instances), Operating system (Linux), Workload (Consistent, Number of instances: 3), Advance EC2 instance (t2.2xlarge), Pricing strategy (EC2 Instance Savings Plans 3yr  No Upfront), EBS Storage amount (100 GB)  | $ 375.276 |
+| Amazon Keyspaces | LOCAL_QUORUM reads (1000000 per month), PITR Storage (Enabled), Storage (1 GB), Number of writes (1000000 per month)| $ 2.28 |
 
-## Prerequisites (required)
+We recommend creating a [Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) through [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) to help manage costs. Prices are subject to change. For full details, refer to the pricing webpage for each AWS service used in this Guidance.
 
-### Operating System (required)
+## Prerequisites
+- The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed.
+- Access to deploy Cloudformation template and create resources (AWS Glue, Amazon Keyspaces, EC2, VPC, Subnets, Amazon S3, Security groups, IAM roles and Policies)
+- Install Git to Clone Repository
 
-- Talk about the base Operating System (OS) and environment that can be used to run or deploy this Guidance, such as *Mac, Linux, or Windows*. Include all installable packages or modules required for the deployment. 
-- By default, assume Amazon Linux 2/Amazon Linux 2023 AMI as the base environment. All packages that are not available by default in AMI must be listed out.  Include the specific version number of the package or module.
+### Operating System
 
-**Example:**
-“These deployment instructions are optimized to best work on **<Amazon Linux 2 AMI>**.  Deployment in another OS may require additional steps.”
+- Mac or Linux or Amazon Linux environment can be used to run or deploy this Guidance.
 
-- Include install commands for packages, if applicable.
+### AWS account requirements
 
+This deployment requires that you have access to the following AWS services:
 
-### Third-party tools (If applicable)
+- Amazon Simple Storage Service (Amazon S3) 
+- AWS Glue
+- Amazon Keyspaces
+- Amazon Elastic Compute Cloud (Amazon EC2)
+- Amazon Virtual Private Cloud (Amazon VPC)
+- AWS Identity and Access Management (IAM)
+- AWS Cloudformation
+- Amazon Cloudwatch
 
-*List any installable third-party tools required for deployment.*
 
+### Supported Regions
 
-### AWS account requirements (If applicable)
+This guidance can be deployed in any AWS Regions where Amazon Keyspaces is supported. You can find list of Amazon Keyspaces Service Endpoints for each AWS region from here [link] (https://docs.aws.amazon.com/general/latest/gr/keyspaces.html)
 
-*List out pre-requisites required on the AWS account if applicable, this includes enabling AWS regions, requiring ACM certificate.*
 
-**Example:** “This deployment requires you have public ACM certificate available in your AWS account”
+## Deployment Steps
 
-**Example resources:**
-- ACM certificate 
-- DNS record
-- S3 bucket
-- VPC
-- IAM role with specific permissions
-- Enabling a Region or service etc.
+These deployment instructions are optimized to best work on Mac or Amazon Linux 2023. Deployment in another OS may require additional steps.
 
 
-### aws cdk bootstrap (if sample code has aws-cdk)
+1. Clone the repo using command 
+```
+git clone https://github.com/aws-solutions-library-samples/guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces
+```
+2. cd to the repo templates folder 
+```
+cd guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces/deployment/templates
+```
+3. Configure AWS CLI environment by setting below values. Make sure to replace the place holders with your environment specific values
+```
+export AWS_REGION=<AWS Region>
+export AWS_ACCOUNT_ID=<AWS Account ID>
+export AWS_ACCESS_KEY_ID=<AWS ACCESS KEY>
+export AWS_SECRET_ACCESS_KEY=<AWS SECRET ACCESS KEY>
+```
 
-<If using aws-cdk, include steps for account bootstrap for new cdk users.>
+4. Run below command to create S3 bucket
+```
+aws s3api create-bucket --bucket cql-replicator-$AWS_ACCOUNT_ID-$AWS_REGION
+```
 
-**Example blurb:** “This Guidance uses aws-cdk. If you are using aws-cdk for first time, please perform the below bootstrapping....”
+5. Run below command to create EC2 Key Pair
 
-### Service limits  (if applicable)
+```
+aws ec2 create-key-pair --key-name my-cass-kp --query 'KeyMaterial' --output text > my-cass-kp.pem
+```
 
-<Talk about any critical service limits that affect the regular functioning of the Guidance. If the Guidance requires service limit increase, include the service name, limit name and link to the service quotas page.>
+Note: output file `my-cass-kp.pem` content can be later used to Cassandra EC2 instances from Cassandra Client EC2 instance. So save the file.
 
-### Supported Regions (if applicable)
 
-<If the Guidance is built for specific AWS Regions, or if the services used in the Guidance do not support all Regions, please specify the Region this Guidance is best suited for>
+6. Now run below command to deploy cloudformation template to create new VPC, Subnets, Security groups,  Cassandra Client EC2 instance, Amazon Keyspaces Keyspace and table and IAM roles with policies.You can check progress from Cloudformation console.
 
+```
+aws cloudformation deploy --template-file cfn-vpc-ks.yml --stack-name cfn-vpc-ks-stack --parameter-overrides KeyName=my-cass-kp --tags purpose=vpc-ks-iamroles-creation --s3-bucket cql-replicator-$AWS_ACCOUNT_ID-$AWS_REGION  --capabilities CAPABILITY_NAMED_IAM
+```
 
-## Deployment Steps (required)
+7. Once Cloudformation stack `cfn-vpc-ks-stack` is finished, then run below command to capture output of stack into a file.
+```
+aws cloudformation describe-stacks --stack-name cfn-vpc-ks-stack --query "Stacks[0].Outputs[*].[OutputKey,OutputValue]" --output text > stack_resources_output
+```
 
-Deployment steps must be numbered, comprehensive, and usable to customers at any level of AWS expertise. The steps must include the precise commands to run, and describe the action it performs.
+8. Now pick values of `CassandraVPCId`, `PrivateSubnetOne`, `PrivateSubnetTwo`, `PrivateSubnetThree` and `CassandraClientInstanceSecurityGroupID` from output file `stack_resources_output`
 
-* All steps must be numbered.
-* If the step requires manual actions from the AWS console, include a screenshot if possible.
-* The steps must start with the following command to clone the repo. ```git clone xxxxxxx```
-* If applicable, provide instructions to create the Python virtual environment, and installing the packages using ```requirement.txt```.
-* If applicable, provide instructions to capture the deployed resource ARN or ID using the CLI command (recommended), or console action.
+9. Now pass values from `Step 8` to cloudformation command deploy parameters as mentioned below and deploy the cloudformation template to create Cassandra nodes
 
- 
-**Example:**
+- `CassandraVPCId` to VpcId, 
+- `PrivateSubnetOne` to Subnet1, 
+- `PrivateSubnetTwo` to Subnet2, 
+- `PrivateSubnetThree` to Subnet3,
+- `CassandraClientInstanceSecurityGroupID` to SourceSecurityGroup and
+- `CassandraClientInstanceSecurityGroupID` to CassandraClientSecurityGroup
 
-1. Clone the repo using command ```git clone xxxxxxxxxx```
-2. cd to the repo folder ```cd <repo-name>```
-3. Install packages in requirements using command ```pip install requirement.txt```
-4. Edit content of **file-name** and replace **s3-bucket** with the bucket name in your account.
-5. Run this command to deploy the stack ```cdk deploy``` 
-6. Capture the domain name created by running this CLI command ```aws apigateway ............```
 
+```
+aws cloudformation deploy --template-file cfn_cassandra_cluster_creation.yml --stack-name cass-cluster-stack --parameter-overrides KeyName=msk-ks-cass-kp VpcId=<value of CassandraVPCId> Subnet1=<value of PrivateSubnetOne> Subnet2=<value of PrivateSubnetTwo> Subnet3=<value of PrivateSubnetThree> SourceSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> CassandraClientSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> --tags purpose=msk-cass-nodes-creation --capabilities CAPABILITY_NAMED_IAM
+```
 
+10. Once Cloudformation stack `cass-cluster-stack` is finished, then run below command to capture output of stack into a file.
 
-## Deployment Validation  (required)
+```
+aws cloudformation describe-stacks --stack-name cass-cluster-stack --query "Stacks[0].Outputs[*].[OutputKey,OutputValue]" --output text > stack_resources_cassandra_output
+```
 
-<Provide steps to validate a successful deployment, such as terminal output, verifying that the resource is created, status of the CloudFormation template, etc.>
 
+## Deployment Validation
 
-**Examples:**
+Open CloudFormation console and verify the status of the templates with the names `cfn-vpc-ks-stack` and `cass-cluster-stack`. If deployments are successful you should be able to see VPC with subnets, Amazon EC2 Cassandra client instance, Three Amazon EC2 Cassandra nodes, Amazon Keyspaces Keyspace and a table.
 
-* Open CloudFormation console and verify the status of the template with the name starting with xxxxxx.
-* If deployment is successful, you should see an active database instance with the name starting with <xxxxx> in        the RDS console.
-*  Run the following CLI command to validate the deployment: ```aws cloudformation describe xxxxxxxxxxxxx```
 
+## Running the Guidance
 
+Once the CloudFormation stack is deployed, Follow the below steps to configure and test the guidance. Replace `<ip_address_ec2>` with IP address of Cassandra client EC2 instance.
 
-## Running the Guidance (required)
+1. Copy `my-cass-kp.pem` file from step 5 of deployment to Cassandra Client EC2 instance
 
-<Provide instructions to run the Guidance with the sample data or input provided, and interpret the output received.> 
+```
+chmod 400 my-cass-kp.pem 
 
-This section should include:
+scp -i "my-cass-kp.pem" my-cass-kp.pem ubuntu@ec2-<ip_address_ec2>.compute-1.amazonaws.com:~/.
+```
 
-* Guidance inputs
-* Commands to run
-* Expected output (provide screenshot if possible)
-* Output description
+2. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and finish configuring Cassandra cluster, starting with Cassandra node One. and ssh to `CassandraNode-One` using EC2 key-pair `my-cass-kp.pem`. Make sure to replace `<IP Address of CassandraNode-one>` with IP address of `CassandraNode-one`.
 
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
+```
 
 
-## Next Steps (required)
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cassandra
+```
 
-Provide suggestions and recommendations about how customers can modify the parameters and the components of the Guidance to further enhance it according to their requirements.
+```
+bin/nodetool status
+```
 
 
-## Cleanup (required)
 
-- Include detailed instructions, commands, and console actions to delete the deployed Guidance.
-- If the Guidance requires manual deletion of resources, such as the content of an S3 bucket, please specify.
+3. Stay on Cassandra node one commandline and Check CQLSH connectivity on Cassandra Node one
 
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cqlsh `hostname -i` -u cassandra -p cassandra
 
+```
 
-## FAQ, known issues, additional considerations, and limitations (optional)
+```
+select * from system.local
+```
 
+4. Stay on commandline and get IP Address of "CassandraNode-One" with below command to use it in other two nodes for Cassandra cluster setup
 
-**Known issues (optional)**
+```
+hostname -i
+```
 
-<If there are common known issues, or errors that can occur during the Guidance deployment, describe the issue and resolution steps here>
+5. Now configure second Cassandra node by doing ssh to `CassandraNode-Two` using EC2 key-pair `my-cass-kp.pem`. 
 
 
-**Additional considerations (if applicable)**
+- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`.
 
-<Include considerations the customer must know while using the Guidance, such as anti-patterns, or billing considerations.>
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-Two>
+```
 
-**Examples:**
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+vi conf/cassandra.yaml
+```
 
-- “This Guidance creates a public AWS bucket required for the use-case.”
-- “This Guidance created an Amazon SageMaker notebook that is billed per hour irrespective of usage.”
-- “This Guidance creates unauthenticated public API endpoints.”
+- Start Cassandra service 
 
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cassandra
+```
 
-Provide a link to the *GitHub issues page* for users to provide feedback.
+```
+bin/nodetool status
+```
 
 
-**Example:** *“For any feedback, questions, or suggestions, please use the issues tab under this repo.”*
+6. Now configure Third Cassandra node by doing ssh to `CassandraNode-Three` using EC2 key-pair `my-cass-kp.pem`. 
 
-## Revisions (optional)
+- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`.
 
-Document all notable changes to this project.
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-Three>
+```
 
-Consider formatting this section based on Keep a Changelog, and adhering to Semantic Versioning.
 
-## Notices (optional)
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+vi conf/cassandra.yaml
+```
 
-Include a legal disclaimer
+- Start Cassandra service 
 
-**Example:**
-*Customers are responsible for making their own independent assessment of the information in this Guidance. This Guidance: (a) is for informational purposes only, (b) represents AWS current product offerings and practices, which are subject to change without notice, and (c) does not create any commitments or assurances from AWS and its affiliates, suppliers or licensors. AWS products or services are provided “as is” without warranties, representations, or conditions of any kind, whether express or implied. AWS responsibilities and liabilities to its customers are controlled by AWS agreements, and this Guidance is not part of, nor does it modify, any agreement between AWS and its customers.*
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cassandra
+```
 
+```
+bin/nodetool status
+```
 
-## Authors (optional)
+Note: nodetool status should show you a Three node Cassandra cluster
 
-Name of code contributors
+7. Stay on `CassandraNode-Three` commandline and create `keyspace` and `table` in Cassandra cluster.
+
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+
+bin/cqlsh `hostname -i` -u cassandra -p cassandra
+
+```
+
+```
+create KEYSPACE aws WITH replication = {'class': 'NetworkTopologyStrategy', 'Datacenter1':'3'} and durable_writes = 'true';
+
+```
+
+```
+CREATE TABLE aws.orders (
+    order_id uuid,
+    order_date timestamp,
+    product_id uuid,
+    quantity int,
+    user_id uuid,
+    PRIMARY KEY (order_id, order_date)
+) WITH CLUSTERING ORDER BY (order_date ASC);
+
+```
+
+8. Now create the cassandra stress yaml file to generate the data and load into `aws.orders` table
+
+```
+vi ecommerce_stress.yaml
+```
+
+```
+keyspace: aws
+table: orders
+columnspec:
+  - name: order_id
+    size: fixed(36)  # UUID size
+    population: uniform(1..1000000)  # 1 million unique order IDs
+  - name: product_id
+    size: fixed(36)
+    population: uniform(1..100000)  # Assuming 100,000 unique products
+  - name: user_id
+    size: fixed(36)
+    population: uniform(1..10000)  # Assuming 10,000 unique users
+  - name: order_date
+    cluster: uniform(1..1000)  # Random timestamps
+  - name: quantity
+    size: fixed(4)  # Integer size
+    population: uniform(1..10)  # Quantities from 1 to 10
+insert:
+  partitions: fixed(1)  # One partition per batch
+  batchtype: UNLOGGED
+  select: fixed(1)/1000  # To avoid reading too much
+queries:
+  simple1:
+    cql: select * from orders2 where order_id = ?
+    fields: samerow  # Use data from the same row
+```
+
+
+```
+ /home/ubuntu/apache-cassandra-3.11.2/tools/bin/cassandra-stress user profile=ecommerce_stress.yaml n=50000 ops\(insert=1\) -rate threads=100 -node `hostname -i`  -mode native cql3 user=cassandra password=cassandra
+```
+
+9. Now validate loaded data in `aws.orders` table in `cassandra database`
+
+Apache Cassandra CQLSH output screenshot:
+
+![CQLH Editor](./assets/images/cassorders.png)
+
+10. Now open `Cloudshell` from AWS Console and download the CQLReplicator repository
+
+```
+git clone https://github.com/aws-samples/cql-replicator.git
+```
+
+11. Replace the file `cql-replicator/glue/conf/CassandraConnector.conf`  with file `guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces/deployment/templates/CassandraConnector.conf`
+
+12. Modify newly replaced `CassandraConnector.conf` file in directory `cql-replicator/glue/conf/' with below changes
+
+Replace “<ip_address_cassandra_node1>” in CassandraConnector.conf with “PrivateIpInstanceOne” value from “stack_resources_cassandra_output” file
+
+![Contact points](./assets/images/contactpoints.png)
+
+13. Now intialize the CQLReplicator environment. The following command initializes the CQLReplicator environment, which involves the copying JAR artifacts, creation a Glue connector, a S3 bucket, a Glue job, migration keyspace, and ledger table.
+
+
+- `--sg`, `CassandraSecurityGroupId`  value from `stack_resources_cassandra_output` file 
+- `--subnet`, “PrivateSubnetOne” value from `stack_resources_cassandra_output` file
+- `--az`, `PrivateSubnetOneAZ` value from `stack_resources_vpc_output` file 
+- `--region`, AWS Region of Cassandra cluster
+- `--glue-iam-role`, `GlueRolename` value from `stack_resources_vpc_output` file
+- `--landing-zone`, S3 bucket name from Step 4 of deployment
+
+
+```
+cd cql-replicator/glue/bin
+```
+
+```
+    cqlreplicator --state init --region us-west-2 \ 
+                  --skip-glue-connector \
+                  --glue-iam-role glue-cassandra-migration \
+                  --landing-zone s3://cql-replicator-1234567890-us-west-2 \
+                  --target-type parquet
+```
+
+Output of successfully initialization looks like below screenshot
+
+![commadnline](./assets/images/init_output.png)
+
+
+14. Run the CQLReplicator to start the migration
+
+```
+cd cql-replicator/glue/bin 
+```
+
+- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
+
+```
+./cqlreplicator --state run --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --writetime-column quantity --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
+```
+
+Output of command after successfully starting One Discovery Glue job and two Replicator Glue jobs
+
+![commadnline](./assets/images/start_replication.png)
+
+One Discovery Job from AWS Console
+
+![AWS Comsole](./assets/images/discoveryjob.png)
+
+
+One Discovery Job and Two Replication jobs running screenshot
+
+![AWS Comsole](./assets/images/replicatorjobs.png)
+
+
+15. Now check the migration stats from Cloudshell commandline
+
+- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
+
+```
+./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
+```
+
+Initial Replication Stats will looks like below screenshot
+
+![AWS Comsole](./assets/images/init_replication_stats.png)
+
+
+Replication Stats after full load
+
+![AWS Comsole](./assets/images/full_load.png)
+
+16. Now `Insert` Record into Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
+```
+
+
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cqlsh `hostname -i` -u cassandra -p cassandra
+
+```
+
+```
+insert into aws.orders (order_id,order_date,product_id,quantity,user_id) VALUES (50554d6e-29bb-11e5-b345-feff819cdc9f, toTimeStamp(now()),now(),10,now());
+```
+
+```
+select * from aws.orders where order_id=50554d6e-29bb-11e5-b345-feff819cdc9f;
+```
+
+Inserted Row screenshot in Cassandra database
+
+![AWS Comsole](./assets/images/insert_cassandra.png)
+
+
+Validate the replication by navigating to `CQL Editor` from AWS Console under `Amazon Keyspaces` service
+
+
+Inserted Row screenshot in Keyspaces database
+
+![AWS Comsole](./assets/images/insert_keyspaces.png)
+
+
+
+15. Now `Update` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
+```
+
+
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cqlsh `hostname -i` -u cassandra -p cassandra
+
+```
+
+```
+update aws.orders set quantity=300 where order_id=00000000-0001-b200-0000-00000001b200 and order_date='1971-08-23 23:15:33.697';
+```
+
+```
+select * from aws.orders where order_id=00000000-0001-b200-0000-00000001b200 and order_date='1971-08-23 23:15:33.697';
+```
+
+
+Updated Row screenshot in Cassandra database
+
+![AWS Comsole](./assets/images/update_cassandra.png)
+
+
+Validate the replication by navigating to `CQL Editor` from AWS Console under `Amazon Keyspaces` service
+
+
+Updated Row screenshot in Keyspaces database
+
+![AWS Comsole](./assets/images/update_keyspaces.png)
+
+
+16. Now `Delete` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+
+```
+ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
+```
+
+
+```
+cd /home/ubuntu/apache-cassandra-3.11.2
+bin/cqlsh `hostname -i` -u cassandra -p cassandra
+
+```
+
+```
+delete from aws.orders where order_id=50554d6e-29bb-11e5-b345-feff819cdc9f;
+```
+
+```
+select * from aws.orders where order_id=50554d6e-29bb-11e5-b345-feff819cdc9f;
+```
+
+
+Deleted Row screenshot in Cassandra database
+
+![AWS Comsole](./assets/images/delete_cassandra.png)
+
+
+Validate the replication by navigating to `CQL Editor` from AWS Console under `Amazon Keyspaces` service
+
+
+Before row got deleted from Amazon Keyspaces
+
+![AWS Comsole](./assets/images/before_delete_keyspaces.png)
+
+
+After row got deleted from Amazon Keyspaces
+
+![AWS Comsole](./assets/images/after_delete_keyspaces.png)
+
+
+17. Now check final stats from Cloudshell. These stats include, `Full load, Inserted row, Updated Row and Deleted Row`. These stats shows how CQLReplicator migrated data from Cassandra to Keyspaces database in near real-time
+
+
+- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
+
+```
+./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
+```
+
+Screenshot of final stats
+
+![AWS Comsole](./assets/images/after_delete_keyspaces.png)
+
+
+## Next Steps
+
+Having explored how to efficiently migrating data from Apache Cassandra and Amazon Keyspaces using CQLReplicator in near real-time, You can implement similar setup for your Applications during migration from Apache Cassandra to Amazon Keyspaces.
+
+
+## Cleanup
+
+To delete resources created as part of this guidance, you can finish below steps
+
+1. Stop the CQLReplicator job
+
+```
+cd cql-replicator/glue/bin 
+```
+
+- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
+
+```
+./cqlreplicator --state request-stop --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --region us-east-1 --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
+```
+
+Screenshot of successfully stopped CQLReplicator job will mark Glue jobs as succeeded 
+
+![AWS Comsole](./assets/images/stopped_cqlreplicator.png)
+
+
+2. Cleanup the CQLReplicator job. This will delete `S3 bucket` and will remove the `AWS Glue CQLReplicator streaming job`
+
+```
+cd cql-replicator/glue/bin 
+```
+
+- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
+
+```
+./cqlreplicator --state cleanup --landing-zone s3://<s3 bucket name> --region <AWS_REGION> 
+```
+
+3. Delete all resources created using below command. Check cloudformation stacks `(cass-cluster-stack and cfn-vpc-ks-stack)` deletion status from cloudformation from AWS console after executing below script. If `VPC` created as part of `cfn-vpc-ks-stack` not deleted as part of below command, then run command in step 2.
+
+```
+cd guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces
+sh delete_stack.sh
+```
+
+4. This step is `optional` and needed when `VPC` and `subnets` created as part of `cfn-vpc-ks-stack` not deleted during cloudformartion stack deletion.
+
+```
+cd guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces
+sh delete_vpc.sh
+```
+
+
+5. Make sure to check for any left over resources and delete them manually to avoid any accidental charges
+
+## Notices
+
+
+Customers are responsible for making their own independent assessment of the information in this Guidance. This Guidance: (a) is for informational purposes only, (b) represents AWS current product offerings and practices, which are subject to change without notice, and (c) does not create any commitments or assurances from AWS and its affiliates, suppliers or licensors. AWS products or services are provided “as is” without warranties, representations, or conditions of any kind, whether express or implied. AWS responsibilities and liabilities to its customers are controlled by AWS agreements, and this Guidance is not part of, nor does it modify, any agreement between AWS and its customers.*
+
+

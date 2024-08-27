@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to deploy a Three node Cassandra cluster on EC2 instances.
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Can contain only ASCII characters.
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x
+  VpcId:
+    Description: VPC ID where the EC2 instances will be deployed
+    Type: AWS::EC2::VPC::Id
+    AllowedPattern: 'vpc-[\da-f]{8}|vpc-[\da-f]{17}'
+    ConstraintDescription: Must be a valid VPC ID.
+  Subnet1:
+    Description: Subnet ID for the first EC2 instance
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: 'subnet-[\da-f]{8}|subnet-[\da-f]{17}'
+    ConstraintDescription: Must be a valid Subnet ID.
+  Subnet2:
+    Description: Subnet ID for the second EC2 instance
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: 'subnet-[\da-f]{8}|subnet-[\da-f]{17}'
+    ConstraintDescription: Must be a valid Subnet ID.
+  Subnet3:
+    Description: Subnet ID for the third EC2 instance
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: 'subnet-[\da-f]{8}|subnet-[\da-f]{17}'
+    ConstraintDescription: Must be a valid Subnet ID.
+  SourceSecurityGroup:
+    Description: Provide security group ID of any source like Application or CQL client or MSK to access Cassandra cluster through 9042 or 9142
+    Type: String
+    AllowedPattern: '^sg-[\da-f]{8}|sg-[\da-f]{17}$'
+    ConstraintDescription: Must be a valid security group ID or left blank.
+  CassandraClientSecurityGroup:
+    Description: "Security Group ID of the client that will be allowed SSH access to the Cassandra nodes. Specify 'Not Needed' if no client security group access is required or provisioning EC2 instances in public subnet"
+    Type: String
+    Default: "Not Needed"
+    AllowedPattern: "^(sg-[\\da-f]{8,17}|Not Needed)$"
+    ConstraintDescription: "Must be a valid security group ID or 'Not Needed'."
+
+Mappings:
+  RegionAMI:
+    us-east-1:
+      HVM64: ami-0e001c9271cf7f3b9
+    us-east-2:
+      HVM64: ami-0f30a9c3a48f3fa79
+    us-west-1:
+      HVM64: ami-036cafe742923b3d9
+    us-west-2:
+      HVM64: ami-03c983f9003cb9cd1
+    eu-west-1:
+      HVM64: ami-0607a9783dd204cae
+    eu-west-2:
+      HVM64: ami-09627c82937ccdd6d
+    eu-west-3:
+      HVM64: ami-0326f9264af7e51e2
+    eu-north-1:
+      HVM64: ami-011e54f70c1c91e17
+    eu-central-1:
+      HVM64: ami-026c3177c9bd54288
+    ap-south-1:
+      HVM64: ami-05e00961530ae1b55
+    ap-southeast-2:
+      HVM64: ami-076fe60835f136dc9
+    ap-southeast-1:
+      HVM64: ami-0be48b687295f8bd6
+    ap-northeast-1:
+      HVM64: ami-0595d6e81396a9efb
+
+Conditions:
+  HasSourceSecurityGroup: !Not [!Equals [!Ref SourceSecurityGroup, ""]]
+  NeedsCassandraClientSecurityGroup: !Not [!Equals [!Ref CassandraClientSecurityGroup, "Not Needed"]]
+
+
+Resources:
+  # Security Group Creation
+  CassandraSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Cassandra cluster security group"
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic for Cassandra cluster"
+      Tags:
+        - Key: "Name"
+          Value: "cass-cluster-sg"
+
+  # Ingress Rules for Inter-node Communication
+  CassandraSecurityGroupIngress7000:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !GetAtt CassandraSecurityGroup.GroupId
+      IpProtocol: "tcp"
+      FromPort: 7000
+      ToPort: 7000
+      Description: "Inter-node communication on port 7000"
+
+  CassandraSecurityGroupIngress7001:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !GetAtt CassandraSecurityGroup.GroupId
+      IpProtocol: "tcp"
+      FromPort: 7001
+      ToPort: 7001
+      Description: "Inter-node communication on port 7001"
+
+  CassandraSecurityGroupIngress7199:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !GetAtt CassandraSecurityGroup.GroupId
+      IpProtocol: "tcp"
+      FromPort: 7199
+      ToPort: 7199
+      Description: "JMX port for inter-node communication"
+
+  # Ingress Rule for Client Access on Port 9042
+  CassandraSecurityGroupIngress9042:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasSourceSecurityGroup
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !Ref SourceSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 9042
+      ToPort: 9042
+      Description: "cassandra app or clash client or MSK access to Cassandra cluster on port 9042"
+
+  # Ingress Rule for Client Access on Port 9142
+  CassandraSecurityGroupIngress9142:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasSourceSecurityGroup
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !Ref SourceSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 9142
+      ToPort: 9142
+      Description: "cassandra app or clash client or MSK access to Cassandra cluster on port 9142"
+
+  # Allow SSH access from a specific client security group
+  CassandraSecurityGroupIngressSSH:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: NeedsCassandraClientSecurityGroup
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !Ref CassandraClientSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 22
+      ToPort: 22
+      Description: "Allow SSH access from the specified Cassandra client security group"
+
+
+  # Self-referencing rule to allow access to AWS Glue
+  CassandraSecurityGroupSelfRefIngressAllTCP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt CassandraSecurityGroup.GroupId
+      SourceSecurityGroupId: !GetAtt CassandraSecurityGroup.GroupId
+      IpProtocol: "tcp"
+      FromPort: 0
+      ToPort: 65535
+      Description: "Allow self-referencing all TCP ports for Glue communication"
+
+  EC2InstanceOne:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.2xlarge
+      KeyName: !Ref KeyName
+      SubnetId: !Ref Subnet1
+      SecurityGroupIds:
+        - !GetAtt CassandraSecurityGroup.GroupId
+      ImageId: !FindInMap
+        - RegionAMI
+        - !Ref 'AWS::Region'
+        - HVM64
+      Tags:
+        - Key: Name
+          Value: CassandraNode-One
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          cd /home/ubuntu
+          sudo apt-get update
+          sudo apt-get install -y openjdk-8-jdk
+          sudo apt-get install -y python2
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 18
+          echo "deb http://debian.datastax.com/community 311x main" | sudo tee -a /etc/apt/sources.list.d/cassandra.sources.list
+          curl https://downloads.apache.org/cassandra/KEYS | sudo apt-key add -
+          sudo apt-get update
+          curl -OL https://archive.apache.org/dist/cassandra/3.11.2/apache-cassandra-3.11.2-bin.tar.gz
+          tar -zxvf apache-cassandra-3.11.2-bin.tar.gz
+          sudo chown -R ubuntu:ubuntu apache-cassandra-3.11.2
+          IP_ADDRESS=$(hostname -i)
+          sed -i "s/listen_address:.*/listen_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/cluster_name:.*/cluster_name: 'CASS_3112_CLUSTER'/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/rpc_address:.*/rpc_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/seeds:.*/seeds: \"$IP_ADDRESS\"/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authenticator:.*/authenticator: PasswordAuthenticator/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authorizer:.*/authorizer: CassandraAuthorizer/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i '/^"\$JAVA".*/i JVM_OPTS="$JVM_OPTS -Dcom.sun.jndi.rmiURLParsing=legacy"' /home/ubuntu/apache-cassandra-3.11.2/bin/nodetool
+          sed -i "s/endpoint_snitch:.*/endpoint_snitch: GossipingPropertyFileSnitch/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/dc=dc1/dc=Datacenter1/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+          sed -i "s/rack=rack1/rack=RACK1/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+
+      Monitoring: true
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 100
+            VolumeType: "gp2"
+            Encrypted: true
+
+  EC2InstanceTwo:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.2xlarge
+      KeyName: !Ref KeyName
+      SubnetId: !Ref Subnet2
+      SecurityGroupIds:
+        - !GetAtt CassandraSecurityGroup.GroupId
+      ImageId: !FindInMap
+        - RegionAMI
+        - !Ref 'AWS::Region'
+        - HVM64
+      Tags:
+        - Key: Name
+          Value: CassandraNode-Two
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          cd /home/ubuntu
+          sudo apt-get update
+          sudo apt-get install -y openjdk-8-jdk
+          sudo apt-get install -y python2
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 18
+          echo "deb http://debian.datastax.com/community 311x main" | sudo tee -a /etc/apt/sources.list.d/cassandra.sources.list
+          curl https://downloads.apache.org/cassandra/KEYS | sudo apt-key add -
+          sudo apt-get update
+          curl -OL https://archive.apache.org/dist/cassandra/3.11.2/apache-cassandra-3.11.2-bin.tar.gz
+          tar -zxvf apache-cassandra-3.11.2-bin.tar.gz
+          sudo chown -R ubuntu:ubuntu apache-cassandra-3.11.2
+          IP_ADDRESS=$(hostname -i)
+          sed -i "s/listen_address:.*/listen_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/cluster_name:.*/cluster_name: 'CASS_3112_CLUSTER'/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/rpc_address:.*/rpc_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/seeds:.*/seeds: \"$IP_ADDRESS\"/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authenticator:.*/authenticator: PasswordAuthenticator/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authorizer:.*/authorizer: CassandraAuthorizer/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i '/^"\$JAVA".*/i JVM_OPTS="$JVM_OPTS -Dcom.sun.jndi.rmiURLParsing=legacy"' /home/ubuntu/apache-cassandra-3.11.2/bin/nodetool
+          sed -i "s/endpoint_snitch:.*/endpoint_snitch: GossipingPropertyFileSnitch/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/dc=dc1/dc=Datacenter1/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+          sed -i "s/rack=rack1/rack=RACK2/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+
+      Monitoring: true
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 100
+            VolumeType: "gp2"
+            Encrypted: true
+
+
+  EC2InstanceThree:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.2xlarge
+      KeyName: !Ref KeyName
+      SubnetId: !Ref Subnet3
+      SecurityGroupIds:
+        - !GetAtt CassandraSecurityGroup.GroupId
+      ImageId: !FindInMap
+        - RegionAMI
+        - !Ref 'AWS::Region'
+        - HVM64
+      Tags:
+        - Key: Name
+          Value: CassandraNode-Three
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          cd /home/ubuntu
+          sudo apt-get update
+          sudo apt-get install -y openjdk-8-jdk
+          sudo apt-get install -y python2
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 18
+          echo "deb http://debian.datastax.com/community 311x main" | sudo tee -a /etc/apt/sources.list.d/cassandra.sources.list
+          curl https://downloads.apache.org/cassandra/KEYS | sudo apt-key add -
+          sudo apt-get update
+          curl -OL https://archive.apache.org/dist/cassandra/3.11.2/apache-cassandra-3.11.2-bin.tar.gz
+          tar -zxvf apache-cassandra-3.11.2-bin.tar.gz
+          sudo chown -R ubuntu:ubuntu apache-cassandra-3.11.2
+          IP_ADDRESS=$(hostname -i)
+          sed -i "s/listen_address:.*/listen_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/cluster_name:.*/cluster_name: 'CASS_3112_CLUSTER'/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/rpc_address:.*/rpc_address: $IP_ADDRESS/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/seeds:.*/seeds: \"$IP_ADDRESS\"/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authenticator:.*/authenticator: PasswordAuthenticator/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/authorizer:.*/authorizer: CassandraAuthorizer/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i '/^"\$JAVA".*/i JVM_OPTS="$JVM_OPTS -Dcom.sun.jndi.rmiURLParsing=legacy"' /home/ubuntu/apache-cassandra-3.11.2/bin/nodetool
+          sed -i "s/endpoint_snitch:.*/endpoint_snitch: GossipingPropertyFileSnitch/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra.yaml
+          sed -i "s/dc=dc1/dc=Datacenter1/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+          sed -i "s/rack=rack1/rack=RACK3/" /home/ubuntu/apache-cassandra-3.11.2/conf/cassandra-rackdc.properties
+
+      Monitoring: true
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 100
+            VolumeType: "gp2"
+            Encrypted: true
+
+
+
+Outputs:
+  CassandraSecurityGroupId:
+    Description: Security Group ID of the Cassandra cluster
+    Value: !GetAtt CassandraSecurityGroup.GroupId
+  PrivateIpInstanceOne:
+    Description: Private IP address of the first EC2 instance
+    Value: !GetAtt EC2InstanceOne.PrivateIpAddress
+  PrivateIpInstanceTwo:
+    Description: Private IP address of the second EC2 instance
+    Value: !GetAtt EC2InstanceTwo.PrivateIpAddress
+  PrivateIpInstanceThree:
+    Description: Private IP address of the third EC2 instance
+    Value: !GetAtt EC2InstanceThree.PrivateIpAddress
+  CassandraInstanceOne:
+    Description: The Arn for the EC2InstanceOne
+    Value: !Ref EC2InstanceOne
+  CassandraInstanceTwo:
+    Description: The Arn for the EC2InstanceTwo
+    Value: !Ref EC2InstanceTwo
+  CassandraInstanceThree:
+    Description: The Arn for the EC2InstanceThree
+    Value: !Ref EC2InstanceThree
