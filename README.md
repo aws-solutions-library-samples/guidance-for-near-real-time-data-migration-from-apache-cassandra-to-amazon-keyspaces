@@ -38,17 +38,17 @@ Architecture diagram:
 
 You are responsible for the cost of the AWS services used while running this Guidance.
 
-As of 07/02/2024, the cost for running this guidance with the default settings in the US East (N. Virginia) is approximately $690.64 per month for producing 1 million messages and inserting them in to Amazon Keyspaces and Apache Cassandra databases.
+As of 09/11/2024, the cost for running this guidance with the default settings in the US East (N. Virginia) is approximately $434.57 per month for creating resources (Three node Cassandra Cluster, Cassandra client EC2 instance, Amazon Keyspaces and AWS Glue job) using guidance cloudformation templates and migrating 64K records in a Cassandra table to Amazon Keyspaces using AWS Glue.
 
 
 The following table provides a sample cost breakdown for deploying this Guidance with the default parameters in the US East (N. Virginia) Region for one month.
 
 | AWS service  | Dimensions | Monthly Cost [USD] |
 | ----------- | ------------ | ------------ |
-| Amazon Managed Streaming for Apache Kafka (MSK) | Storage per Broker (100 GB), DT Intra-Region: (1 GB per month), Number of Kafka broker nodes (3), Compute Family (t3.small), Number of MCUs (2)  | $ 290.484 |
-| Amazon EC2 (kafka client instance) | Tenancy (Shared Instances), Operating system (Linux), Workload (Consistent, Number of instances: 1), Advance EC2 instance (t2.medium), Pricing strategy (EC2 Instance Savings Plans 3yr  No Upfront), EBS Storage amount (100 GB) | $ 22.6 |
-| Amazon EC2 (cassandra nodes) | Tenancy (Shared Instances), Operating system (Linux), Workload (Consistent, Number of instances: 3), Advance EC2 instance (t2.2xlarge), Pricing strategy (EC2 Instance Savings Plans 3yr  No Upfront), EBS Storage amount (100 GB)  | $ 375.276 |
-| Amazon Keyspaces | LOCAL_QUORUM reads (1000000 per month), PITR Storage (Enabled), Storage (1 GB), Number of writes (1000000 per month)| $ 2.28 |
+| AWS Glue | Number of DPUs for Apache Spark job (10), Number of DPUs for Python Shell job (0.0625)  | $ 4.40 |
+| Amazon Elastic Cloud Compute (Amazon EC2) - (Cassandra client instance) | Tenancy (Shared Instances), Operating system (Ubuntu Pro), Workload (Consistent, Number of instances: 1), Advance EC2 instance (t2.medium), Pricing strategy ( 3yr No Upfront), Enable monitoring (enabled), EBS Storage amount (50 GB), DT Inbound: Not selected (0 TB per month), DT Outbound: Not selected (0 TB per month), DT Intra-Region: (100 GB per month) | $ 24.38 |
+| Amazon Elastic Cloud Compute (Amazon EC2) - (cassandra nodes) | enancy (Shared Instances), Operating system (Ubuntu Pro), Workload (Consistent, Number of instances: 3), Advance EC2 instance (t2.2xlarge), Pricing strategy ( 3yr No Upfront), Enable monitoring (enabled), EBS Storage amount (100 GB), DT Inbound: Not selected (0 TB per month), DT Outbound: Not selected (0 TB per month), DT Intra-Region: (100 GB per month)  | $ 403.51 |
+| Amazon Keyspaces | LOCAL_ONE reads (0), LOCAL_QUORUM reads (1), PITR Storage (Enabled), Storage (1 GB), Number of writes (1000000 per month), Number of reads (1000000 per month), Number of TTL delete operations (0 per month)| $ 2.28 |
 
 We recommend creating a [Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) through [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) to help manage costs. Prices are subject to change. For full details, refer to the pricing webpage for each AWS service used in this Guidance.
 
