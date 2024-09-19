@@ -342,6 +342,8 @@ Replace “<ip_address_cassandra_node1>” in CassandraConnector.conf with “Pr
 
 13. Now intialize the CQLReplicator environment. The following command initializes the CQLReplicator environment, which involves the copying JAR artifacts, creation a Glue connector, a S3 bucket, a Glue job, migration keyspace, and ledger table.
 
+Note: If you are running this command from `cloudshell` and encountered error `bc requires but it's not installed. Aborting. You could try to run: sudo yum install bc -y`, then run command `sudo yum install bc -y` to resolve the error.
+
 
 - `--sg`, `CassandraSecurityGroupId`  value from `stack_resources_cassandra_output` file 
 - `--subnet`, “PrivateSubnetOne” value from `stack_resources_cassandra_output` file
@@ -357,15 +359,15 @@ cd cql-replicator/glue/bin
 
 ```
     cqlreplicator --state init --region us-west-2 \ 
-                  --skip-glue-connector \
-                  --glue-iam-role glue-cassandra-migration \
-                  --landing-zone s3://cql-replicator-1234567890-us-west-2 \
+                  --glue-iam-role <GlueRolename> \
+                  --landing-zone <s3_bucket> \
                   --target-type parquet
 ```
 
 Output of successfully initialization looks like below screenshot
 
 ![commadnline](./assets/images/init_output.png)
+
 
 
 14. Run the CQLReplicator to start the migration
@@ -557,7 +559,7 @@ cd cql-replicator/glue/bin
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state request-stop --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --region us-east-1 --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
+./cqlreplicator --state request-stop --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
 ```
 
 Screenshot of successfully stopped CQLReplicator job will mark Glue jobs as succeeded 
