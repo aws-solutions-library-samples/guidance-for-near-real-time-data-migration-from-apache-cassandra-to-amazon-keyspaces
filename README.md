@@ -139,7 +139,7 @@ aws cloudformation describe-stacks --stack-name cfn-vpc-ks-stack --query "Stacks
 
 
 ```
-aws cloudformation deploy --template-file cfn_cassandra_cluster_creation.yml --stack-name cass-cluster-stack --parameter-overrides KeyName=msk-ks-cass-kp VpcId=<value of CassandraVPCId> Subnet1=<value of PrivateSubnetOne> Subnet2=<value of PrivateSubnetTwo> Subnet3=<value of PrivateSubnetThree> SourceSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> CassandraClientSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> --tags purpose=msk-cass-nodes-creation --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy --template-file cfn_cassandra_cluster_creation.yml --stack-name cass-cluster-stack --parameter-overrides KeyName=my-cass-kp VpcId=<value of CassandraVPCId> Subnet1=<value of PrivateSubnetOne> Subnet2=<value of PrivateSubnetTwo> Subnet3=<value of PrivateSubnetThree> SourceSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> CassandraClientSecurityGroup=<value of CassandraClientInstanceSecurityGroupID> --tags purpose=cass-nodes-creation --capabilities CAPABILITY_NAMED_IAM
 ```
 
 10. Once Cloudformation stack `cass-cluster-stack` is finished, then run below command to capture output of stack into a file.
@@ -156,9 +156,9 @@ Open CloudFormation console and verify the status of the templates with the name
 
 ## Running the Guidance
 
-Once the CloudFormation stack is deployed, Follow the below steps to configure and test the guidance. Replace `<ip_address_ec2>` with IP address of Cassandra client EC2 instance.
+Once the CloudFormation stack is deployed, Follow the below steps to configure and test the guidance. 
 
-1. Copy `my-cass-kp.pem` file from step 5 of deployment to Cassandra Client EC2 instance
+1. Copy `my-cass-kp.pem` file from step 5 of deployment to Cassandra Client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance`. Replace `<ip_address_ec2>` with IP address of Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance`.
 
 ```
 chmod 400 my-cass-kp.pem 
@@ -166,7 +166,7 @@ chmod 400 my-cass-kp.pem
 scp -i "my-cass-kp.pem" my-cass-kp.pem ubuntu@ec2-<ip_address_ec2>.compute-1.amazonaws.com:~/.
 ```
 
-2. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and finish configuring Cassandra cluster, starting with Cassandra node One. and ssh to `CassandraNode-One` using EC2 key-pair `my-cass-kp.pem`. Make sure to replace `<IP Address of CassandraNode-one>` with IP address of `CassandraNode-one`.
+2. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using `EC2 Instance Connect` or `SSH` and finish configuring Cassandra cluster, starting with Cassandra node One. and ssh to `CassandraNode-One` using EC2 key-pair `my-cass-kp.pem`. Make sure to replace `<IP Address of CassandraNode-one>` with IP address of `CassandraNode-one`.
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
