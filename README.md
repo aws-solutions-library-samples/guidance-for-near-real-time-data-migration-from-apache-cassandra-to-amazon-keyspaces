@@ -322,6 +322,8 @@ queries:
 
 9. Now validate loaded data in `aws.orders` table in `cassandra database`
 
+`Note` Row count in below screenshot is approximate and your count may be different
+
 Apache Cassandra CQLSH output screenshot:
 
 ![CQLH Editor](./assets/images/cassorders.png)
@@ -332,7 +334,7 @@ Apache Cassandra CQLSH output screenshot:
 git clone https://github.com/aws-samples/cql-replicator.git
 ```
 
-11. Replace the file `cql-replicator/glue/conf/CassandraConnector.conf`  with file `guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces/deployment/templates/CassandraConnector.conf`
+11. Replace the file `cql-replicator/glue/conf/CassandraConnector.conf`  with file `guidance-for-near-real-time-data-migration-from-apache-cassandra-to-amazon-keyspaces/CassandraConnector.conf`
 
 12. Modify newly replaced `CassandraConnector.conf` file in directory `cql-replicator/glue/conf/' with below changes
 
@@ -345,12 +347,12 @@ Replace “<ip_address_cassandra_node1>” in CassandraConnector.conf with “Pr
 Note: If you are running this command from `cloudshell` and encountered error `bc requires but it's not installed. Aborting. You could try to run: sudo yum install bc -y`, then run command `sudo yum install bc -y` to resolve the error.
 
 
-- `--sg`, `CassandraSecurityGroupId`  value from `stack_resources_cassandra_output` file 
-- `--subnet`, “PrivateSubnetOne” value from `stack_resources_cassandra_output` file
-- `--az`, `PrivateSubnetOneAZ` value from `stack_resources_vpc_output` file 
-- `--region`, AWS Region of Cassandra cluster
-- `--glue-iam-role`, `GlueRolename` value from `stack_resources_vpc_output` file
-- `--landing-zone`, S3 bucket name from Step 4 of deployment
+- `--sg`, Replace `<CassandraSecurityGroupId>` with `CassandraSecurityGroupId`  value from `stack_resources_cassandra_output` file 
+- `--subnet`, Replace `<PrivateSubnetOne>` with `PrivateSubnetOne` value from `stack_resources_cassandra_output` file
+- `--az`, replace `<PrivateSubnetOneAZ>` with `PrivateSubnetOneAZ` value from `stack_resources_vpc_output` file 
+- `--region`, Replace `<aws-region-cassandra-cluster>` with AWS Region of Cassandra cluster
+- `--glue-iam-role`, Replace `<GlueRolename>` with `GlueRolename` value from `stack_resources_vpc_output` file
+- `--landing-zone`, Replace `<s3_bucket_name>` with S3 bucket name from Step 4 of deployment
 
 
 ```
@@ -358,10 +360,7 @@ cd cql-replicator/glue/bin
 ```
 
 ```
-    cqlreplicator --state init --region us-west-2 \ 
-                  --glue-iam-role <GlueRolename> \
-                  --landing-zone <s3_bucket> \
-                  --target-type parquet
+./cqlreplicator --state init --sg '"<CassandraSecurityGroupId>"' --subnet "<PrivateSubnetOne>" --az <PrivateSubnetOneAZ> --region <aws-region-cassandra-cluster> --glue-iam-role <GlueRolename> --landing-zone s3://<s3_bucket_name>
 ```
 
 Output of successfully initialization looks like below screenshot
@@ -376,11 +375,11 @@ Output of successfully initialization looks like below screenshot
 cd cql-replicator/glue/bin 
 ```
 
-- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--landing-zone`, <s3_bucket_name> should be replaced with S3 bucket name from Step 4 of deployment
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state run --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --writetime-column quantity --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
+./cqlreplicator --state run --tiles 2 --landing-zone s3://<s3_bucket_name> --region <AWS_REGION> --writetime-column quantity --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
 ```
 
 Output of command after successfully starting One Discovery Glue job and two Replicator Glue jobs
@@ -399,11 +398,11 @@ One Discovery Job and Two Replication jobs running screenshot
 
 15. Now check the migration stats from Cloudshell commandline
 
-- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--landing-zone`, <s3_bucket_name> should be replaced with S3 bucket name from Step 4 of deployment
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
+./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3_bucket_name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
 ```
 
 Initial Replication Stats will looks like below screenshot
@@ -415,7 +414,7 @@ Replication Stats after full load
 
 ![AWS Comsole](./assets/images/full_load.png)
 
-16. Now `Insert` Record into Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+16. Now `Insert` Record into Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `CassandraNode-one EC2 instance` and connect to `cqlsh`
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
@@ -450,7 +449,7 @@ Inserted Row screenshot in Keyspaces database
 
 
 
-15. Now `Update` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+15. Now `Update` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `CassandraNode-one EC2 instance` and connect to `cqlsh`
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
@@ -485,7 +484,7 @@ Updated Row screenshot in Keyspaces database
 ![AWS Comsole](./assets/images/update_keyspaces.png)
 
 
-16. Now `Delete` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `cassandra node one EC2 instance` and connect to `cqlsh`
+16. Now `Delete` the Record in Cassandra Database and test the replication from Cassandra to Keyspaces. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using EC2 Instance Connect and ssh to `CassandraNode-one EC2 instance` and connect to `cqlsh`
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
@@ -528,11 +527,11 @@ After row got deleted from Amazon Keyspaces
 17. Now check final stats from Cloudshell. These stats include, `Full load, Inserted row, Updated Row and Deleted Row`. These stats shows how CQLReplicator migrated data from Cassandra to Keyspaces database in near real-time
 
 
-- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--landing-zone`, <s3_bucket_name> should be replaced with S3 bucket name from Step 4 of deployment
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
+./cqlreplicator --state stats --tiles 2 --landing-zone s3://<s3_bucket_name> --region <AWS_REGION>  --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders --replication-stats-enabled
 ```
 
 Screenshot of final stats
@@ -555,11 +554,11 @@ To delete resources created as part of this guidance, you can finish below steps
 cd cql-replicator/glue/bin 
 ```
 
-- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--landing-zone`, <s3_bucket_name> should be replaced with S3 bucket name from Step 4 of deployment
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state request-stop --tiles 2 --landing-zone s3://<s3 bucket name> --region <AWS_REGION> --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
+./cqlreplicator --state request-stop --tiles 2 --landing-zone s3://<s3_bucket_name> --region <AWS_REGION> --src-keyspace aws --src-table orders --trg-keyspace aws --trg-table orders
 ```
 
 Screenshot of successfully stopped CQLReplicator job will mark Glue jobs as succeeded 
@@ -573,11 +572,11 @@ Screenshot of successfully stopped CQLReplicator job will mark Glue jobs as succ
 cd cql-replicator/glue/bin 
 ```
 
-- `--landing-zone`, <s3 bucket name> should be replaced with S3 bucket name from Step 4 of deployment
+- `--landing-zone`, <s3_bucket_name> should be replaced with S3 bucket name from Step 4 of deployment
 - `--region`, <AWS_REGION> value should be replaced with AWS Region used in step 13
 
 ```
-./cqlreplicator --state cleanup --landing-zone s3://<s3 bucket name> --region <AWS_REGION> 
+./cqlreplicator --state cleanup --landing-zone s3://<s3_bucket_name> --region <AWS_REGION> 
 ```
 
 3. Delete all resources created using below command. Check cloudformation stacks `(cass-cluster-stack and cfn-vpc-ks-stack)` deletion status from cloudformation from AWS console after executing below script. If `VPC` created as part of `cfn-vpc-ks-stack` not deleted as part of below command, then run command in step 2.
