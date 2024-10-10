@@ -166,7 +166,9 @@ chmod 400 my-cass-kp.pem
 scp -i "my-cass-kp.pem" my-cass-kp.pem ubuntu@ec2-<ip_address_ec2>.compute-1.amazonaws.com:~/.
 ```
 
-2. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using `EC2 Instance Connect` or `SSH` and finish configuring Cassandra cluster, starting with Cassandra node One. and ssh to `CassandraNode-One` using EC2 key-pair `my-cass-kp.pem`. Make sure to replace `<IP Address of CassandraNode-one>` with IP address of `CassandraNode-one`.
+2. Connect to Cassandra client EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` using `EC2 Instance Connect` or `SSH` and finish configuring Cassandra cluster, starting with Cassandra node One. 
+
+ssh to `CassandraNode-One` using EC2 key-pair `my-cass-kp.pem`. Make sure to replace `<IP Address of CassandraNode-one>` with IP address of `CassandraNode-one`.
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-one>
@@ -202,19 +204,24 @@ select * from system.local
 hostname -i
 ```
 
+Now exit from `CassandraNode-one` terminal and go back to EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` terminal
+
 5. Now configure second Cassandra node by doing ssh to `CassandraNode-Two` using EC2 key-pair `my-cass-kp.pem`. 
 
-
-- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`.
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-Two>
 ```
 
+- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`. For reference, You can see the example screenshot with seeds property.
+
+
 ```
 cd /home/ubuntu/apache-cassandra-3.11.2
 vi conf/cassandra.yaml
 ```
+
+![Seeds Property](./assets/images/seeds.png)
 
 - Start Cassandra service 
 
@@ -227,20 +234,23 @@ bin/cassandra
 bin/nodetool status
 ```
 
+Now exit from `CassandraNode-Two` terminal and go back to EC2 instance `cqlrepl-ks-cass-CassandraClientInstance` terminal
 
 6. Now configure Third Cassandra node by doing ssh to `CassandraNode-Three` using EC2 key-pair `my-cass-kp.pem`. 
-
-- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`.
 
 ```
 ssh -i "my-cass-kp.pem" ubuntu@<IP Address of CassandraNode-Three>
 ```
 
+- Edit `cassandra.yaml` and update value of `seeds` property with IP Address of `CassandraNode-One` from `step-8` and `save the file`. For reference, You can see the example screenshot with seeds property.
+
 
 ```
 cd /home/ubuntu/apache-cassandra-3.11.2
 vi conf/cassandra.yaml
 ```
+
+![Seeds Property](./assets/images/seeds.png)
 
 - Start Cassandra service 
 
@@ -253,7 +263,7 @@ bin/cassandra
 bin/nodetool status
 ```
 
-Note: nodetool status should show you a Three node Cassandra cluster
+Note: nodetool status should show you a Three node Cassandra cluster. 
 
 7. Stay on `CassandraNode-Three` commandline and create `keyspace` and `table` in Cassandra cluster.
 
