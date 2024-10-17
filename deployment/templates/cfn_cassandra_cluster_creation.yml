@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to deploy a Three node Cassandra cluster on EC2 instances.
+Description: Guidance for Near Real-Time Data Migration from Apache Cassandra to Amazon Keyspaces(SO9540) - CloudFormation template to deploy a Three node Cassandra cluster on EC2 instances.
 
 Parameters:
   KeyName:
